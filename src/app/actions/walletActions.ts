@@ -51,15 +51,14 @@ export async function linkWalletToUser(input: LinkWalletInput): Promise<WalletLi
   }
 
   try {
-    const existingLinkStmt = db.prepare('SELECT id FROM wallet_links WHERE user_id = ?');
-    const existingLink = existingLinkStmt.get(userId) as Pick<WalletLink, 'id'> | undefined;
+    const existingLink = await db.get('SELECT id FROM wallet_links WHERE user_id = ?', [userId]) as Pick<WalletLink, 'id'> | null;
 
     if (existingLink) {
       // User already has a wallet linked. Overwrite the wallet address (1:1 mapping).
-      const updateStmt = db.prepare(
-        'UPDATE wallet_links SET email = ?, wallet_address = ?, is_public = ?, user_expected_address = ?, transaction_history = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?'
+      await db.execute(
+        'UPDATE wallet_links SET email = ?, wallet_address = ?, is_public = ?, user_expected_address = ?, transaction_history = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+        [normalizedPublicEmail, walletAddress, isPublic ? 1 : 0, userExpectedAddress, transactionHistory, existingLink.id, userId]
       );
-      updateStmt.run(normalizedPublicEmail, walletAddress, isPublic ? 1 : 0, userExpectedAddress, transactionHistory, existingLink.id, userId);
       
       await addNotification(
         userId,
@@ -80,10 +79,10 @@ export async function linkWalletToUser(input: LinkWalletInput): Promise<WalletLi
     } else {
       // User has no wallet linked. Create a new link.
       const id = randomUUID();
-      const stmt = db.prepare(
-        'INSERT INTO wallet_links (id, user_id, email, wallet_address, is_public, user_expected_address, transaction_history) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      await db.execute(
+        'INSERT INTO wallet_links (id, user_id, email, wallet_address, is_public, user_expected_address, transaction_history) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [id, userId, normalizedPublicEmail, walletAddress, isPublic ? 1 : 0, userExpectedAddress, transactionHistory]
       );
-      stmt.run(id, userId, normalizedPublicEmail, walletAddress, isPublic ? 1 : 0, userExpectedAddress, transactionHistory);
       
       await addNotification(
         userId,
@@ -104,28 +103,24 @@ export async function linkWalletToUser(input: LinkWalletInput): Promise<WalletLi
     }
   } catch (error: any) {
     console.error('Error linking/updating wallet:', error);
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      if (error.message.includes('wallet_links.wallet_address') || error.message.includes('idx_wallet_links_wallet_address_unique')) {
-        // This wallet address is already linked by SOME user (could be this user or another)
-        const checkOwnerStmt = db.prepare('SELECT user_id FROM wallet_links WHERE wallet_address = ?');
-        const owner = checkOwnerStmt.get(walletAddress) as { user_id: string } | undefined;
+    const errorMessage = error.message || '';
+    if (errorMessage.includes('UNIQUE') || error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (errorMessage.includes('wallet_address') || errorMessage.includes('idx_wallet_links_wallet_address_unique')) {
+        const owner = await db.get('SELECT user_id FROM wallet_links WHERE wallet_address = ?', [walletAddress]) as { user_id: string } | null;
         
         if (owner && owner.user_id === userId) {
           return { error: 'This wallet address is already linked to your account.' };
         } else {
           return { error: 'This wallet address is already linked to another account.' };
         }
-      } else if (error.message.includes('wallet_links.email') || error.message.includes('idx_wallet_links_email_unique')) {
+      } else if (errorMessage.includes('email') || errorMessage.includes('idx_wallet_links_email_unique')) {
         return { error: 'This email address is already associated with an account. Please contact support if you think this is a mistake.' };
       }
-      // Fallback for any other unique constraint
       return { error: 'A unique constraint was violated. This email or wallet combination may already exist in the system.' };
     }
     return { error: error.message || 'Failed to link or update wallet.' };
   }
 }
-
-
 
 export async function getWalletsForUser(): Promise<WalletLink[]> {
   const userId = await getUserIdFromSession();
@@ -133,8 +128,7 @@ export async function getWalletsForUser(): Promise<WalletLink[]> {
     return [];
   }
   try {
-    const stmt = db.prepare('SELECT id, user_id as userId, email, wallet_address as walletAddress, is_public as isPublic, user_expected_address as userExpectedAddress, transaction_history as transactionHistory FROM wallet_links WHERE user_id = ? ORDER BY created_at DESC');
-    const wallets = stmt.all(userId) as WalletLink[];
+    const wallets = await db.query('SELECT id, user_id as userId, email, wallet_address as walletAddress, is_public as isPublic, user_expected_address as userExpectedAddress, transaction_history as transactionHistory FROM wallet_links WHERE user_id = ? ORDER BY created_at DESC', [userId]) as WalletLink[];
     return wallets.map(w => ({...w, isPublic: Boolean(w.isPublic)}));
   } catch (error: any) {
     console.error('Error fetching wallets:', error);
@@ -148,8 +142,7 @@ export async function updateWalletPrivacy(walletId: string, isPublic: boolean): 
     return { success: false, error: 'User not authenticated.' };
   }
   try {
-    const stmt = db.prepare('UPDATE wallet_links SET is_public = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?');
-    const result = stmt.run(isPublic ? 1 : 0, walletId, userId);
+    const result = await db.execute('UPDATE wallet_links SET is_public = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [isPublic ? 1 : 0, walletId, userId]);
     if (result.changes > 0) {
       await addNotification(
         userId,
@@ -172,8 +165,7 @@ export async function removeWalletLink(walletId: string): Promise<{ success: boo
     return { success: false, error: 'User not authenticated.' };
   }
   try {
-    const stmt = db.prepare('DELETE FROM wallet_links WHERE id = ? AND user_id = ?');
-    const result = stmt.run(walletId, userId);
+    const result = await db.execute('DELETE FROM wallet_links WHERE id = ? AND user_id = ?', [walletId, userId]);
     if (result.changes > 0) {
       await addNotification(
         userId,
@@ -193,8 +185,7 @@ export async function removeWalletLink(walletId: string): Promise<{ success: boo
 export async function getPublicWalletByEmail(email: string): Promise<Pick<WalletLink, 'email' | 'walletAddress'> | null> {
   if (!email) return null;
   try {
-    const stmt = db.prepare('SELECT email, wallet_address as walletAddress FROM wallet_links WHERE email = ? AND is_public = 1 LIMIT 1');
-    const result = stmt.get(email.toLowerCase()) as Pick<WalletLink, 'email' | 'walletAddress'> | undefined;
+    const result = await db.get('SELECT email, wallet_address as walletAddress FROM wallet_links WHERE email = ? AND is_public = 1 LIMIT 1', [email.toLowerCase()]) as Pick<WalletLink, 'email' | 'walletAddress'> | null;
     return result || null;
   } catch (error) {
     console.error('Error fetching public wallet by email:', error);
@@ -208,10 +199,9 @@ export interface TopWallet extends Pick<WalletLink, 'email' | 'walletAddress'> {
 
 export async function getTopPublicWalletsByBalance(limit: number = 5): Promise<TopWallet[]> {
   try {
-    const publicLinksStmt = db.prepare(
+    const links = await db.query(
       'SELECT email, wallet_address as walletAddress FROM wallet_links WHERE is_public = 1'
-    );
-    const links = publicLinksStmt.all() as Pick<WalletLink, 'email' | 'walletAddress'>[];
+    ) as Pick<WalletLink, 'email' | 'walletAddress'>[];
 
     const walletsWithBalancePromises = links.map(async (link) => {
       // We only need mainnet balances for this leaderboard.

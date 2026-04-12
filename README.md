@@ -37,9 +37,12 @@ AlgoLink includes a "Discovery Engine" that allows you to find people and assets
 3. Set up your environment:
    ```bash
    cp .env.example .env
-   # Add your SMTP and Algorand credentials
+   # Add your SMTP, Algorand and AI credentials
    ```
-4. Run the development server:
+4. **Configure Storage Mode**:
+   AlgoLink supports local development (SQLite) and cloud production (Turso/Vercel Blob). Set `STORAGE_MODE=local` for dev or `STORAGE_MODE=cloud` for production in your `.env`.
+
+5. Run the development server:
    ```bash
    npm run dev
    ```

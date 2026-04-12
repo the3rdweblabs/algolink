@@ -16,6 +16,22 @@ This document provides instructions for setting up the AlgoLink development envi
 
 Create a `.env` file in the root directory. You can use `.env.example` as a template.
 
+### 🔄 Hybrid Storage Mode
+AlgoLink supports a dual-storage architecture. Toggle between local development and cloud production using `STORAGE_MODE`.
+
+- **local** (Default): Uses SQLite and the local filesystem for avatars.
+- **cloud**: Uses **Turso** (Serverless SQLite) and **Vercel Blob** (Object Storage). Recommended for Vercel deployments.
+
+```bash
+# Set to 'local' for development, 'cloud' for production
+STORAGE_MODE=local
+
+# Required if STORAGE_MODE=cloud
+TURSO_DATABASE_URL="your-turso-url"
+TURSO_AUTH_TOKEN="your-turso-token"
+BLOB_READ_WRITE_TOKEN="your-vercel-blob-token"
+```
+
 ### Algorand Node Configuration
 ```bash
 # Mainnet

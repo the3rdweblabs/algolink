@@ -25,6 +25,10 @@ export const metadata: Metadata = {
     template: '%s | AlgoLink',
   },
   description: 'Securely link your Algorand wallet to your email, explore the blockchain, and manage your digital identity with AlgoLink.',
+  icons: {
+    icon: '/icon.png?v=2',
+    apple: '/icon.png?v=2',
+  },
 };
 
 export default function RootLayout({

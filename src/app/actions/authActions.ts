@@ -111,22 +111,22 @@ export async function verifyOtpAndLogin(prevState: VerifyOtpState, formData: For
   try {
     consumeOtp(normalizedEmail); // Consume OTP after successful validation
 
-    let user = db.prepare('SELECT id, email, display_name, avatar_url, is_verified FROM users WHERE email = ?').get(normalizedEmail) as { 
+    let user = await db.get('SELECT id, email, display_name, avatar_url, is_verified FROM users WHERE email = ?', [normalizedEmail]) as { 
       id: string; 
       email: string; 
       display_name: string | null;
       avatar_url: string | null;
       is_verified: number; 
-    } | undefined;
+    } | null;
 
     if (!user) {
       // User does not exist, create new user
       const userId = randomUUID();
       const initialDisplayName = normalizedEmail.split('@')[0];
-      const insertUserStmt = db.prepare(
-        'INSERT INTO users (id, email, display_name, is_verified, email_verified_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)'
+      await db.execute(
+        'INSERT INTO users (id, email, display_name, is_verified, email_verified_at) VALUES (?, ?, ?, TRUE, CURRENT_TIMESTAMP)',
+        [userId, normalizedEmail, initialDisplayName]
       );
-      insertUserStmt.run(userId, normalizedEmail, initialDisplayName);
       user = { 
         id: userId, 
         email: normalizedEmail, 
@@ -148,8 +148,7 @@ export async function verifyOtpAndLogin(prevState: VerifyOtpState, formData: For
       // User exists. Ensure their display_name is set if null, and mark as verified if not already.
       const currentDisplayName = user.display_name || normalizedEmail.split('@')[0];
       if (!user.is_verified || user.display_name !== currentDisplayName) {
-        db.prepare('UPDATE users SET is_verified = TRUE, email_verified_at = CURRENT_TIMESTAMP, display_name = ? WHERE id = ?')
-          .run(currentDisplayName, user.id);
+        await db.execute('UPDATE users SET is_verified = TRUE, email_verified_at = CURRENT_TIMESTAMP, display_name = ? WHERE id = ?', [currentDisplayName, user.id]);
         user.is_verified = 1;
         user.display_name = currentDisplayName;
         console.log("Server verifyOtpAndLogin: Existing user updated:", user.id);
@@ -179,7 +178,6 @@ export async function verifyOtpAndLogin(prevState: VerifyOtpState, formData: For
   redirect('/dashboard');
 }
 
-
 export async function logoutUser() {
   await clearSession();
   redirect('/auth/authenticate'); 
@@ -207,14 +205,13 @@ export async function getCurrentUser(): Promise<(Omit<SessionPayload, 'expiresAt
   const session = await getSession();
   if (!session) return null;
   
-  const userStmt = db.prepare('SELECT id, email, display_name, avatar_url, is_verified FROM users WHERE id = ?');
-  const user = userStmt.get(session.userId) as { 
+  const user = await db.get('SELECT id, email, display_name, avatar_url, is_verified FROM users WHERE id = ?', [session.userId]) as { 
     id: string; 
     email: string; 
     display_name: string | null;
     avatar_url: string | null;
     is_verified: number; 
-  } | undefined;
+  } | null;
   
   if (!user) {
     // This case might mean the session refers to a user deleted from DB, or a session/DB mismatch.

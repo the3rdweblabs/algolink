@@ -1,9 +1,5 @@
-// src/app/actions/profileActions.ts
 'use server';
 
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { randomUUID } from 'crypto';
 import db from '@/lib/db';
 import { getSession, createSession, getUserIdFromSession } from '@/lib/auth';
 import { addNotification } from './notificationActions';
@@ -11,6 +7,7 @@ import { sendProfileUpdateEmail } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 import { getAccountDetails, getAssetDetails } from './explorerActions';
 import { getWalletsForUser } from './walletActions';
+import { uploadAvatar, validateAvatar } from '@/lib/storage';
 
 export async function updateProfile(formData: FormData) {
   const session = await getSession();
@@ -29,38 +26,22 @@ export async function updateProfile(formData: FormData) {
     // Handle avatar upload if provided and not empty
     if (avatarEntry instanceof File && avatarEntry.size > 0) {
       const avatarFile = avatarEntry;
-      // Validate file type - added gif
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      if (!validTypes.includes(avatarFile.type)) {
-        return { success: false, message: 'Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.' };
+      
+      const validation = validateAvatar(avatarFile);
+      if (!validation.valid) {
+        return { success: false, message: validation.message };
       }
 
-      // Max size: 7MB
-      if (avatarFile.size > 7 * 1024 * 1024) {
-        return { success: false, message: 'File too large. Max size is 7MB.' };
-      }
-
-      const arrayBuffer = await avatarFile.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const fileExtension = avatarFile.name.split('.').pop() || 'png';
-      const fileName = `${userId}-${Date.now()}.${fileExtension}`;
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'avatars');
-      
-      await fs.mkdir(uploadDir, { recursive: true });
-      
-      const filePath = path.join(uploadDir, fileName);
-      await fs.writeFile(filePath, buffer);
-      
-      avatarUrl = `/uploads/avatars/${fileName}`;
+      // Use the hybrid storage utility
+      avatarUrl = await uploadAvatar(avatarFile, userId);
     }
 
     // Update database
-    const stmt = db.prepare(`
+    await db.execute(`
       UPDATE users 
       SET display_name = ?, avatar_url = ?, updated_at = CURRENT_TIMESTAMP 
       WHERE id = ?
-    `);
-    stmt.run(displayName, avatarUrl, userId);
+    `, [displayName, avatarUrl, userId]);
 
     // Update session cookie
     await createSession(

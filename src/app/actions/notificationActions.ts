@@ -12,14 +12,13 @@ export async function getNotifications(): Promise<Notification[]> {
   if (!userId) return [];
 
   try {
-    const stmt = db.prepare(`
+    const rows = await db.query(`
       SELECT id, type, title, message, read, created_at as timestamp 
       FROM notifications 
       WHERE user_id = ? 
       ORDER BY created_at DESC 
       LIMIT 50
-    `);
-    const rows = stmt.all(userId) as any[];
+    `, [userId]);
     
     return rows.map(row => ({
       id: row.id,
@@ -40,8 +39,7 @@ export async function markNotificationAsRead(id: string) {
   if (!userId) return { success: false };
 
   try {
-    const stmt = db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?');
-    stmt.run(id, userId);
+    await db.execute('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?', [id, userId]);
     revalidatePath('/');
     return { success: true };
   } catch (error) {
@@ -55,8 +53,7 @@ export async function markAllNotificationsAsRead() {
   if (!userId) return { success: false };
 
   try {
-    const stmt = db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?');
-    stmt.run(userId);
+    await db.execute('UPDATE notifications SET read = 1 WHERE user_id = ?', [userId]);
     revalidatePath('/');
     return { success: true };
   } catch (error) {
@@ -70,8 +67,7 @@ export async function clearAllNotifications() {
   if (!userId) return { success: false };
 
   try {
-    const stmt = db.prepare('DELETE FROM notifications WHERE user_id = ?');
-    stmt.run(userId);
+    await db.execute('DELETE FROM notifications WHERE user_id = ?', [userId]);
     revalidatePath('/');
     return { success: true };
   } catch (error) {
@@ -84,11 +80,10 @@ export async function clearAllNotifications() {
 export async function addNotification(userId: string, type: 'info' | 'success' | 'warning' | 'message', title: string, message: string) {
   try {
     const id = randomUUID();
-    const stmt = db.prepare(`
+    await db.execute(`
       INSERT INTO notifications (id, user_id, type, title, message, read)
       VALUES (?, ?, ?, ?, ?, 0)
-    `);
-    stmt.run(id, userId, type, title, message);
+    `, [id, userId, type, title, message]);
     return { success: true, id };
   } catch (error) {
     console.error('Error adding notification:', error);
