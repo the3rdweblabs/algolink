@@ -7,7 +7,7 @@ import { sendProfileUpdateEmail } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 import { getAccountDetails, getAssetDetails } from './explorerActions';
 import { getWalletsForUser } from './walletActions';
-import { uploadAvatar, validateAvatar } from '@/lib/storage';
+import { uploadAvatar, validateAvatar, deleteAvatar } from '@/lib/storage';
 
 export async function updateProfile(formData: FormData) {
   const session = await getSession();
@@ -19,9 +19,10 @@ export async function updateProfile(formData: FormData) {
   const displayName = formData.get('displayName') as string;
   const avatarEntry = formData.get('avatar');
   const directAvatarUrl = formData.get('avatarUrl') as string | null;
+  const oldAvatarUrl = session.avatarUrl;
 
   try {
-    let avatarUrl = directAvatarUrl || session.avatarUrl;
+    let avatarUrl = directAvatarUrl || oldAvatarUrl;
 
     // Handle avatar upload if provided and not empty
     if (avatarEntry instanceof File && avatarEntry.size > 0) {
@@ -34,6 +35,11 @@ export async function updateProfile(formData: FormData) {
 
       // Use the hybrid storage utility
       avatarUrl = await uploadAvatar(avatarFile, userId);
+
+      // Clean up the old avatar if a new one was just successfully uploaded
+      if (avatarUrl !== oldAvatarUrl) {
+        await deleteAvatar(oldAvatarUrl);
+      }
     }
 
     // Update database

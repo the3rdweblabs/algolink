@@ -1,7 +1,8 @@
 // src/lib/storage.ts
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { put } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
+import { existsSync } from 'node:fs';
 
 const STORAGE_MODE = process.env.STORAGE_MODE || 'local';
 
@@ -52,4 +53,27 @@ export function validateAvatar(file: File) {
   }
 
   return { valid: true };
+}
+
+/**
+ * Deletes an avatar file from the configured storage
+ */
+export async function deleteAvatar(fileUrl: string | null): Promise<void> {
+  if (!fileUrl) return;
+
+  try {
+    if (STORAGE_MODE === 'cloud' && fileUrl.includes('vercel-storage.com')) {
+      console.log('[STORAGE]: Deleting from Vercel Blob:', fileUrl);
+      await del(fileUrl);
+    } else if (STORAGE_MODE === 'local' && fileUrl.startsWith('/uploads/')) {
+      console.log('[STORAGE]: Deleting from Local Disk:', fileUrl);
+      const filePath = path.join(process.cwd(), 'public', fileUrl);
+      if (existsSync(filePath)) {
+        await fs.unlink(filePath);
+      }
+    }
+  } catch (error) {
+    console.error('[STORAGE]: Error deleting file:', error);
+    // Don't throw to avoid failing the profile update if cleanup fails
+  }
 }
