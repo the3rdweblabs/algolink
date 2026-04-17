@@ -92,6 +92,16 @@
   code, pre, kbd, samp {
     font-family: var(--font-roboto-mono); /* Updated to Roboto Mono */
   }
+
+  /* Hide native browser autofill icons that interfere with custom UI */
+  input::-webkit-contacts-auto-fill-button,
+  input::-webkit-credentials-auto-fill-button {
+    visibility: hidden;
+    display: none !important;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+  }
 }
 
 @layer utilities {

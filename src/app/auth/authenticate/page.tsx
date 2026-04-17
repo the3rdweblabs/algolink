@@ -193,6 +193,9 @@ function AuthenticationContent() {
             value={otpValue}
             onChange={(value) => setOtpValue(value)}
             onComplete={handleOtpComplete}
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            data-1p-ignore
           >
             <InputOTPGroup className="mx-auto">
               <InputOTPSlot index={0} />
