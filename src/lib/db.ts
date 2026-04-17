@@ -13,6 +13,10 @@ interface UniversalDB {
   exec(sql: string): Promise<void>; // For schema initialization
 }
 
+function normalizeArgs(args: any[] = []): any[] {
+  return args.map(arg => arg === undefined ? null : arg);
+}
+
 let dbClient: UniversalDB;
 
 if (STORAGE_MODE === 'cloud') {
@@ -24,18 +28,21 @@ if (STORAGE_MODE === 'cloud') {
 
   dbClient = {
     async execute(sql, args = []) {
-      const res = await client.execute({ sql, args });
+      const normalizedArgs = normalizeArgs(args);
+      const res = await client.execute({ sql, args: normalizedArgs });
       return { 
         lastInsertRowid: res.lastInsertRowid, 
         changes: res.rowsAffected 
       };
     },
     async query(sql, args = []) {
-      const res = await client.execute({ sql, args });
+      const normalizedArgs = normalizeArgs(args);
+      const res = await client.execute({ sql, args: normalizedArgs });
       return res.rows as any[];
     },
     async get(sql, args = []) {
-      const res = await client.execute({ sql, args });
+      const normalizedArgs = normalizeArgs(args);
+      const res = await client.execute({ sql, args: normalizedArgs });
       return (res.rows[0] as any) || undefined;
     },
     async exec(sql) {
@@ -57,20 +64,23 @@ if (STORAGE_MODE === 'cloud') {
 
   dbClient = {
     async execute(sql, args = []) {
+      const normalizedArgs = normalizeArgs(args);
       const stmt = localDb.prepare(sql);
-      const res = stmt.run(...args);
+      const res = stmt.run(...normalizedArgs);
       return { 
         lastInsertRowid: res.lastInsertRowid, 
         changes: res.changes 
       };
     },
     async query(sql, args = []) {
+      const normalizedArgs = normalizeArgs(args);
       const stmt = localDb.prepare(sql);
-      return stmt.all(...args) as any[];
+      return stmt.all(...normalizedArgs) as any[];
     },
     async get(sql, args = []) {
+      const normalizedArgs = normalizeArgs(args);
       const stmt = localDb.prepare(sql);
-      return (stmt.get(...args) as any) || undefined;
+      return (stmt.get(...normalizedArgs) as any) || undefined;
     },
     async exec(sql) {
       localDb.exec(sql);
